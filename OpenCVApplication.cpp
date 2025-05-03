@@ -6,163 +6,206 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/features2d.hpp>
+#include <opencv2/ml.hpp>
 
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <string>
-#include <algorithm>
+#include <direct.h>
+#include <errno.h>
 
 using namespace std;
 using namespace cv;
+using namespace cv::ml;
 
-// 1. Load CIFAR-10 binary batch
+// 0) CIFAR-10 class names for object-based sorting
+const vector<string> LABEL_NAMES = {
+    "airplane","automobile","bird","cat","deer",
+    "dog","frog","horse","ship","truck"
+};
+
+// Utility: create directory if it doesn't exist
+bool makeDir(const string& dir) {
+    if (_mkdir(dir.c_str()) != 0 && errno != EEXIST) {
+        cerr << "ERROR: cannot create directory " << dir << " (" << errno << ")\n";
+        return false;
+    }
+    return true;
+}
+
+// STEP 1: Load CIFAR-10 batch file into color images and labels
 bool loadCIFAR10Batch(const string& filename,
     vector<Mat>& images,
     vector<int>& labels)
 {
-    constexpr int W = 32, H = 32, C = 3, SZ = W * H * C, N = 10000;
+    const int SZ = 3072;          // bytes per image (3 x 32 x 32)
+    const int H = 32, W = 32;
+    const int N = 10000;          // images per batch
+
     ifstream file(filename, ios::binary);
-    if (!file) { cerr << "Can't open " << filename << "\n"; return false; }
-    images.clear(); labels.clear(); images.reserve(N); labels.reserve(N);
+    if (!file) {
+        cerr << "Can't open " << filename << "\n";
+        return false;
+    }
+
+    images.clear(); labels.clear();
+    images.reserve(N); labels.reserve(N);
     vector<uint8_t> buf(SZ);
+
     for (int i = 0; i < N; ++i) {
-        uint8_t l; file.read((char*)&l, 1); labels.push_back(l);
-        file.read((char*)buf.data(), SZ);
+        // read label byte
+        uint8_t l;
+        file.read(reinterpret_cast<char*>(&l), 1);
+        labels.push_back(static_cast<int>(l));
+
+        // read image bytes
+        file.read(reinterpret_cast<char*>(buf.data()), SZ);
+
+        // convert to BGR Mat
         Mat img(H, W, CV_8UC3);
-        for (int r = 0; r < H; ++r) for (int c = 0; c < W; ++c) {
-            int idx = r * W + c;
-            img.at<Vec3b>(r, c) = Vec3b(
-                buf[2 * W * H + idx], buf[W * H + idx], buf[idx]
-            );
+        for (int r = 0; r < H; ++r) {
+            for (int c = 0; c < W; ++c) {
+                int idx = r * W + c;
+                img.at<Vec3b>(r, c) = Vec3b(
+                    buf[2 * W * H + idx],  // blue
+                    buf[W * H + idx],      // green
+                    buf[idx]               // red
+                );
+            }
         }
         images.push_back(img);
     }
-    cout << "Loaded " << images.size() << " imgs from " << filename << "\n";
-    return true;
-}
 
-// 2. Convert to grayscale
-bool convertToGrayscale(const vector<Mat>& in,
-    vector<Mat>& out)
-{
-    if (in.empty()) { cerr << "No images to convert\n"; return false; }
-    out.clear(); out.reserve(in.size());
-    for (auto& img : in) {
-        Mat g; cvtColor(img, g, COLOR_BGR2GRAY);
-        out.push_back(g);
-    }
-    cout << "Converted " << out.size() << " imgs to gray\n";
-    return true;
-}
-
-// 3. Extract features
-bool detectAndCompute(const vector<Mat>& gray,
-    Ptr<Feature2D> det,
-    vector<Mat>& descs)
-{
-    if (gray.empty()) { cerr << "No gray imgs\n"; return false; }
-    descs.clear();
-    for (auto& g : gray) {
-        vector<KeyPoint> k;
-        Mat d;
-        det->detectAndCompute(g, noArray(), k, d);
-        if (!d.empty()) descs.push_back(d);
-    }
-    cout << "Got descriptors for " << descs.size() << " imgs\n";
-    return !descs.empty();
-}
-
-// 4. Build visual dictionary (k-means)
-bool buildVocabulary(const vector<Mat>& descs,
-    int dictSize,
-    Mat& vocab)
-{
-    // TODO: Cluster descriptors into 'dictSize' words.
-    return true;
-}
-
-// 5. Init BOW extractor
-bool setupBowExtractor(Ptr<Feature2D> det,
-    Ptr<DescriptorMatcher> matcher,
-    const Mat& vocab,
-    Ptr<BOWImgDescriptorExtractor>& bowExt)
-{
-    // TODO: Create BOWImgDescriptorExtractor and set vocab.
-    return true;
-}
-
-// 6. Compute BoW histograms
-bool computeBowHistograms(const vector<Mat>& gray,
-    Ptr<Feature2D> det,
-    Ptr<BOWImgDescriptorExtractor> bowExt,
-    vector<Mat>& hists)
-{
-    // TODO: Use bowExt to get histograms for each image.
-    return true;
-}
-
-// 7. Build database matrix
-bool assembleDatabase(const vector<Mat>& hists,
-    Mat& db)
-{
-    // TODO: vconcat all hist mats into db.
-    return true;
-}
-
-// 8. Match query
-bool matchQuery(const Mat& query,
-    const Mat& db,
-    Ptr<DescriptorMatcher> matcher,
-    DMatch& best)
-{
-    // TODO: Find best match between query and db rows.
+    cout << "Loaded " << images.size() << " images and labels from " << filename << "\n";
     return true;
 }
 
 int main()
 {
+    // File selection dialog for CIFAR-10 binary batch
     char fname[MAX_PATH];
     cout << "Select CIFAR-10 .bin file...\n";
     if (!openFileDlg(fname)) return -1;
 
-    // Step 1: Load CIFAR-10 batch
-    vector<Mat> colorImgs; vector<int> labels;
+    // ------------ Pipeline Variables ------------
+    vector<Mat> colorImgs;       // original color images
+    vector<int> labels;          // true class labels
+    vector<Mat> grayImgs;        // grayscale images
+    vector<Mat> descs;           // SIFT descriptors per image
+    Mat vocab;                   // visual vocabulary (words x descriptor dim)
+    Ptr<Feature2D> detector;     // SIFT feature detector
+    Ptr<DescriptorMatcher> matcher;
+    Ptr<BOWImgDescriptorExtractor> bowExtractor;
+    vector<Mat> bOWHists;        // BoW histograms per image
+    Mat db;                      // database matrix of all histograms
+
+    // 1) LOAD DATA
     if (!loadCIFAR10Batch(fname, colorImgs, labels)) return -1;
 
-    // Show the first loaded color image
-    imshow("1 - Original Color Image", colorImgs[0]);
-    waitKey(0);
+    // 2) SORT BY OBJECT CLASS (ground truth labels)
+    cout << "Grouping images by true object class...\n";
+    string objDir = "object_sorted";
+    if (!makeDir(objDir)) return -1;
+    for (size_t i = 0; i < colorImgs.size(); ++i) {
+        int lbl = labels[i];
+        string classDir = objDir + "/" + LABEL_NAMES[lbl];
+        if (!makeDir(classDir)) return -1;
+        char buf[64];
+        snprintf(buf, sizeof(buf), "img_%04zu.png", i);
+        imwrite(classDir + "/" + buf, colorImgs[i]);
+    }
+    cout << "Saved class-grouped images under '" << objDir << "'\n";
 
-    // Step 2: Convert to grayscale
-    vector<Mat> grayImgs;
-    if (!convertToGrayscale(colorImgs, grayImgs)) return -1;
+    // 3) CONVERT TO GRAYSCALE (prepare for feature detection)
+    cout << "Converting to grayscale...\n";
+    if (colorImgs.empty()) { cerr << "No images to process\n"; return -1; }
+    grayImgs.reserve(colorImgs.size());
+    for (auto& img : colorImgs) {
+        Mat g;
+        cvtColor(img, g, COLOR_BGR2GRAY);
+        grayImgs.push_back(g);
+    }
+    cout << "Converted " << grayImgs.size() << " images to grayscale\n";
 
-    // Show the first grayscale image
-    imshow("2 - Grayscale Image", grayImgs[0]);
-    waitKey(0);
+    // 4) EXTRACT SIFT FEATURES
+    cout << "Detecting and computing SIFT descriptors...\n";
+    detector = SIFT::create();
+    for (auto& g : grayImgs) {
+        vector<KeyPoint> keypoints;
+        Mat descriptors;
+        detector->detectAndCompute(g, noArray(), keypoints, descriptors);
+        if (!descriptors.empty()) descs.push_back(descriptors);
+    }
+    cout << "Extracted descriptors from " << descs.size() << " images\n";
 
-    // Step 3: Extract SIFT features
-    auto detector = SIFT::create();
-    vector<Mat> descs;
-    if (!detectAndCompute(grayImgs, detector, descs)) return -1;
+    // 5) BUILD VISUAL VOCABULARY via k-means
+    cout << "Building visual vocabulary (k-means clustering)...\n";
+    int dictSize = 50;
+    {
+        // stack all descriptors vertically
+        Mat allDesc;
+        for (auto& d : descs) allDesc.push_back(d);
+        TermCriteria tc(TermCriteria::MAX_ITER + TermCriteria::EPS, 100, 0.001);
+        BOWKMeansTrainer bowTrainer(dictSize, tc, 1, KMEANS_PP_CENTERS);
+        vocab = bowTrainer.cluster(allDesc);
+    }
+    cout << "Vocabulary of " << vocab.rows << " words created\n";
 
-    // Show keypoints on the first image
-    vector<KeyPoint> kpts;
-    detector->detect(grayImgs[0], kpts);
-    Mat vis;
-    drawKeypoints(colorImgs[0], kpts, vis);
-    imshow("3 - Keypoints on Color Image", vis);
-    waitKey(0);
+    // 6) SETUP BoW EXTRACTOR
+    cout << "Initializing Bag-of-Words extractor...\n";
+    matcher = BFMatcher::create(NORM_L2);
+    bowExtractor = makePtr<BOWImgDescriptorExtractor>(detector, matcher);
+    bowExtractor->setVocabulary(vocab);
+    cout << "BoW extractor ready\n";
 
-    // Placeholder messages for the rest
-    cout << "\n--- Remaining Steps (Coming Next) ---\n";
-    cout << "4. Build visual vocabulary (k-means clustering)...\n";
-    cout << "5. Initialize Bag-of-Words extractor...\n";
-    cout << "6. Compute BoW histograms for all images...\n";
-    cout << "7. Build a database of all BoW vectors...\n";
-    cout << "8. Match query image against the database...\n";
-    cout << "--------------------------------------\n";
+    // 7) COMPUTE BoW HISTOGRAMS
+    cout << "Computing BoW histograms...\n";
+    for (auto& g : grayImgs) {
+        vector<KeyPoint> keypoints;
+        detector->detect(g, keypoints);
+        Mat hist;
+        bowExtractor->compute(g, keypoints, hist);
+        if (!hist.empty()) bOWHists.push_back(hist);
+    }
+    cout << "Computed histograms for " << bOWHists.size() << " images\n";
+
+    // 8) ASSEMBLE DATABASE MATRIX
+    cout << "Assembling database matrix...\n";
+    if (!bOWHists.empty()) {
+        db = bOWHists[0].reshape(1, 1);
+        for (size_t i = 1; i < bOWHists.size(); ++i) {
+            Mat row = bOWHists[i].reshape(1, 1);
+            vconcat(db, row, db);
+        }
+    }
+    cout << "Database assembled with " << db.rows << " entries\n";
+
+    // 9) SORT IMAGES BY VISUAL-WORD DOMINANCE & STRENGTH
+    cout << "Sorting images by visual word and strength...\n";
+    struct ImgInfo { int word, idx; float weight; };
+    vector<ImgInfo> info;
+    for (int i = 0; i < db.rows; ++i) {
+        Point maxLoc;
+        double maxVal;
+        minMaxLoc(bOWHists[i], nullptr, &maxVal, nullptr, &maxLoc);
+        info.push_back({ maxLoc.x, i, static_cast<float>(maxVal) });
+    }
+    sort(info.begin(), info.end(), [](auto& a, auto& b) {
+        if (a.word != b.word) return a.word < b.word;
+        return a.weight > b.weight;
+        });
+
+    string outDir = "sorted_images";
+    if (!makeDir(outDir)) return -1;
+    for (auto& im : info) {
+        string wordDir = outDir + "/word_" + to_string(im.word);
+        if (!makeDir(wordDir)) return -1;
+        char buf[64];
+        snprintf(buf, sizeof(buf), "img_%04d.png", im.idx);
+        imwrite(wordDir + "/" + buf, colorImgs[im.idx]);
+    }
+    cout << "Saved images sorted by visual word under '" << outDir << "'\n";
 
     return 0;
 }
