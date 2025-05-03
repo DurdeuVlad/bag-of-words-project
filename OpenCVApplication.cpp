@@ -126,28 +126,43 @@ int main()
     cout << "Select CIFAR-10 .bin file...\n";
     if (!openFileDlg(fname)) return -1;
 
+    // Step 1: Load CIFAR-10 batch
     vector<Mat> colorImgs; vector<int> labels;
     if (!loadCIFAR10Batch(fname, colorImgs, labels)) return -1;
 
+    // Show the first loaded color image
+    imshow("1 - Original Color Image", colorImgs[0]);
+    waitKey(0);
+
+    // Step 2: Convert to grayscale
     vector<Mat> grayImgs;
     if (!convertToGrayscale(colorImgs, grayImgs)) return -1;
 
+    // Show the first grayscale image
+    imshow("2 - Grayscale Image", grayImgs[0]);
+    waitKey(0);
+
+    // Step 3: Extract SIFT features
     auto detector = SIFT::create();
     vector<Mat> descs;
     if (!detectAndCompute(grayImgs, detector, descs)) return -1;
 
-    // Show keypoints on first image, then stop.
+    // Show keypoints on the first image
     vector<KeyPoint> kpts;
     detector->detect(grayImgs[0], kpts);
     Mat vis;
     drawKeypoints(colorImgs[0], kpts, vis);
-    imshow("Keypoints sample", vis);
-    waitKey();
+    imshow("3 - Keypoints on Color Image", vis);
+    waitKey(0);
 
-    // Remaining steps to finish later:
-    // buildVocabulary, setupBowExtractor,
-    // computeBowHistograms, assembleDatabase,
-    // matchQuery
+    // Placeholder messages for the rest
+    cout << "\n--- Remaining Steps (Coming Next) ---\n";
+    cout << "4. Build visual vocabulary (k-means clustering)...\n";
+    cout << "5. Initialize Bag-of-Words extractor...\n";
+    cout << "6. Compute BoW histograms for all images...\n";
+    cout << "7. Build a database of all BoW vectors...\n";
+    cout << "8. Match query image against the database...\n";
+    cout << "--------------------------------------\n";
 
     return 0;
 }
