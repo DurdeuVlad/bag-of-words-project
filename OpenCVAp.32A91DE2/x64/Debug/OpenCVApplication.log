@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ﻿  OpenCVApplication.cpp
 C:\Users\Public\Documents\GitHub\bag-of-words-project\OpenCVApplication.cpp(258,55): warning C4244: 'argument': conversion from 'int' to '_Tp', possible loss of data
 C:\Users\Public\Documents\GitHub\bag-of-words-project\OpenCVApplication.cpp(258,55): warning C4244:         with
@@ -34,3 +35,6 @@ C:\Users\Public\Documents\GitHub\bag-of-words-project\OpenCVApplication.cpp(356,
   OpenCV\dll\Debug\opencv_videoio_msmf490_64d.dll
   OpenCV\dll\Debug\opencv_world490d.dll
           3 file(s) copied.
+=======
+﻿LINK : fatal error LNK1104: cannot open file 'opencv_world490d.lib'
+>>>>>>> 0119e27fa0ad1b5a438e7accdb57140e27664cf5
