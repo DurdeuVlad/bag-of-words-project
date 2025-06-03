@@ -32,4 +32,5 @@
 *.out
 *.app
 
-./data
+./data/*
+./.vs/OpenCVApplication/FileContentIndex/*
